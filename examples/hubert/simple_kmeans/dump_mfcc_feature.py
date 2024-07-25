@@ -29,8 +29,10 @@ class MfccFeatureReader(object):
 
     def read_audio(self, path, ref_len=None):
         wav = get_features_or_waveform(path, need_waveform=True, use_sample_rate=self.sample_rate)
+        ref_lin = len(wav)
         if ref_len is not None and abs(ref_len - len(wav)) > 160:
-            logging.warning(f"ref {ref_len} != read {len(wav)} ({path})")
+            # logging.warning(f"ref {ref_len} != read {len(wav)} ({path})")
+            logging.warning(f"{path}	{len(wav)}")
         return wav
 
     def get_feats(self, path, ref_len=None):

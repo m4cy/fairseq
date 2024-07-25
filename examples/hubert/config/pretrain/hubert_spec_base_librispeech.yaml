@@ -5,7 +5,7 @@ common:
   log_format: json
   log_interval: 200
   seed: 1337
-  tensorboard_logdir: /home/macyhuang/hubert_training/tensorboardpain
+  tensorboard_logdir: tblog
 
 checkpoint:
   save_interval_updates: 25000
@@ -63,16 +63,15 @@ lr_scheduler:
   warmup_updates: 32000
 
 model:
-  _name: hubert
+  _name: hubert_spec
   label_rate: ???
   skip_masked: false
   skip_nomask: false
   mask_prob: 0.80
-  extractor_mode: default
+  extractor_mode: complex
   conv_feature_layers: '[(512,10,5)] + [(512,3,2)] * 4 + [(512,2,2)] * 2'
   final_dim: 256
   encoder_layerdrop: 0.05
-  # encoder_layers: 6
   dropout_input: 0.1
   dropout_features: 0.1
   dropout: 0.1

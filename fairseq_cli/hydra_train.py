@@ -40,7 +40,7 @@ def _hydra_main(cfg: FairseqConfig, **kwargs) -> float:
                 cfg.job_logging_cfg = OmegaConf.to_container(
                     HydraConfig.get().job_logging, resolve=True
                 )
-
+    
     with omegaconf_no_object_check():
         cfg = OmegaConf.create(
             OmegaConf.to_container(cfg, resolve=True, enum_to_str=True)

@@ -72,15 +72,21 @@ def load_feature_shard(feat_dir, split, nshard, rank, percent):
 
 
 def load_feature(feat_dir, split, nshard, seed, percent):
-    assert percent <= 1.0
-    feat = np.concatenate(
-        [
-            load_feature_shard(feat_dir, split, nshard, r, percent)
-            for r in range(nshard)
-        ],
-        axis=0,
-    )
-    logging.info(f"loaded feature with dimension {feat.shape}")
+    try: 
+        
+        assert percent <= 1.0
+        print('why')
+        feat = np.concatenate(
+            [
+                load_feature_shard(feat_dir, split, nshard, r, percent)
+                for r in range(nshard)
+            ],
+            axis=0,
+        )
+        logging.info(f"loaded feature with dimension {feat.shape}")
+    except:
+        feat = "bleh"
+        print('errored silently')
     return feat
 
 

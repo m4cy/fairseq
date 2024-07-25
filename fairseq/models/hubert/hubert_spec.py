@@ -18,7 +18,7 @@ from fairseq.data.dictionary import Dictionary
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.models import BaseFairseqModel, register_model
 from fairseq.models.wav2vec.wav2vec2 import (
-    EXTRACTOR_MODE_CHOICES,
+    # EXTRACTOR_MODE_CHOICES,
     MASKING_DISTRIBUTION_CHOICES,
     LAYER_TYPE_CHOICES,
     ConvFeatureExtractionModel,
@@ -29,237 +29,51 @@ from fairseq.tasks.hubert_pretraining import (
     HubertPretrainingConfig,
     HubertPretrainingTask,
 )
-
+from fairseq.models.hubert.hubert import HubertConfig	
+from fairseq.models.hubert.hubert import HubertModel
+from fairseq.models.hubert.feature_extraction import (	
+    complex_spec,	
+    linear_power,
+    logmel_power
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class HubertConfig(FairseqDataclass):
-    label_rate: float = II("task.label_rate")
-
-    EXTRACTOR_MODE_CHOICES = ChoiceEnum(["default"])	
-    extractor_mode: EXTRACTOR_MODE_CHOICES = field(	
+class HubertSpecConfig(HubertConfig):
+    SPEC_EXTRACTOR_MODE_CHOICES = ChoiceEnum(["default", "complex", "linear_power", "logmel_power"])	
+    extractor_mode: SPEC_EXTRACTOR_MODE_CHOICES = field(	
         default="default",	
+        # complex="complex",
+        # linear_power="linear_power",
         metadata={	
             "help": "mode for feature extractor. default has a single group "	
             "norm with d groups in the first conv block. complex_linear uses complex linear spectrogram,"	
             "linear_power uses the "	
         },
     )
-    encoder_layers: int = field(
-        default=12, metadata={"help": "num encoder layers in the transformer"}
-    )
-    encoder_embed_dim: int = field(
-        default=768, metadata={"help": "encoder embedding dimension"}
-    )
-    encoder_ffn_embed_dim: int = field(
-        default=3072, metadata={"help": "encoder embedding dimension for FFN"}
-    )
-    encoder_attention_heads: int = field(
-        default=12, metadata={"help": "num encoder attention heads"}
-    )
-    activation_fn: ChoiceEnum(utils.get_available_activation_fns()) = field(
-        default="gelu", metadata={"help": "activation function to use"}
-    )
-    layer_type: LAYER_TYPE_CHOICES = field(
-        default="transformer", metadata={"help": "layer type in encoder"}
-    )
 
-    # dropouts
-    dropout: float = field(
-        default=0.1,
-        metadata={"help": "dropout probability for the transformer"},
-    )
-    attention_dropout: float = field(
-        default=0.1,
-        metadata={"help": "dropout probability for attention weights"},
-    )
-    activation_dropout: float = field(
-        default=0.0,
-        metadata={"help": "dropout probability after activation in FFN"},
-    )
-    encoder_layerdrop: float = field(
-        default=0.0,
-        metadata={"help": "probability of dropping a tarnsformer layer"},
-    )
-    dropout_input: float = field(
-        default=0.0,
-        metadata={"help": "dropout to apply to the input (after feat extr)"},
-    )
-    dropout_features: float = field(
-        default=0.0,
-        metadata={"help": "dropout to apply to the features (after feat extr)"},
-    )
-
-    final_dim: int = field(
-        default=0,
-        metadata={
-            "help": "project final representations and targets to this many "
-            "dimensions. set to encoder_embed_dim is <= 0"
-        },
-    )
-    untie_final_proj: bool = field(
-        default=False,
-        metadata={"help": "use separate projection for each target"},
-    )
-    layer_norm_first: bool = field(
-        default=False,
-        metadata={"help": "apply layernorm first in the transformer"},
-    )
-    conv_feature_layers: str = field(
-        default="[(512,10,5)] + [(512,3,2)] * 4 + [(512,2,2)] * 2",
-        metadata={
-            "help": "string describing convolutional feature extraction "
-            "layers in form of a python list that contains "
-            "[(dim, kernel_size, stride), ...]"
-        },
-    )
-    conv_bias: bool = field(
-        default=False, metadata={"help": "include bias in conv encoder"}
-    )
-    logit_temp: float = field(
-        default=0.1, metadata={"help": "temperature to divide logits by"}
-    )
-    target_glu: bool = field(
-        default=False, metadata={"help": "adds projection + glu to targets"}
-    )
-    feature_grad_mult: float = field(
-        default=1.0,
-        metadata={"help": "multiply feature extractor var grads by this"},
-    )
-
-    # masking
-    mask_length: int = field(default=10, metadata={"help": "mask length"})
-    mask_prob: float = field(
-        default=0.65,
-        metadata={"help": "probability of replacing a token with mask"},
-    )
-    mask_selection: MASKING_DISTRIBUTION_CHOICES = field(
-        default="static", metadata={"help": "how to choose mask length"}
-    )
-    mask_other: float = field(
-        default=0,
-        metadata={
-            "help": "secondary mask argument "
-            "(used for more complex distributions), "
-            "see help in compute_mask_indicesh"
-        },
-    )
-    no_mask_overlap: bool = field(
-        default=False, metadata={"help": "whether to allow masks to overlap"}
-    )
-    mask_min_space: int = field(
-        default=1,
-        metadata={"help": "min space between spans (if no overlap is enabled)"},
-    )
-
-    # channel masking
-    mask_channel_length: int = field(
-        default=10,
-        metadata={"help": "length of the mask for features (channels)"},
-    )
-    mask_channel_prob: float = field(
-        default=0.0,
-        metadata={"help": "probability of replacing a feature with 0"},
-    )
-    mask_channel_selection: MASKING_DISTRIBUTION_CHOICES = field(
-        default="static",
-        metadata={"help": "how to choose mask length for channel masking"},
-    )
-    mask_channel_other: float = field(
-        default=0,
-        metadata={
-            "help": "secondary mask argument "
-            "(used for more complex distributions), "
-            "see help in compute_mask_indicesh"
-        },
-    )
-    no_mask_channel_overlap: bool = field(
-        default=False,
-        metadata={"help": "whether to allow channel masks to overlap"},
-    )
-    mask_channel_min_space: int = field(
-        default=1,
-        metadata={"help": "min space between spans (if no overlap is enabled)"},
-    )
-
-    # positional embeddings
-    conv_pos: int = field(
-        default=128,
-        metadata={"help": "number of filters for convolutional positional embeddings"},
-    )
-    conv_pos_groups: int = field(
-        default=16,
-        metadata={"help": "number of groups for convolutional positional embedding"},
-    )
-
-    latent_temp: Tuple[float, float, float] = field(
-        default=(2, 0.5, 0.999995),
-        metadata={"help": "legacy (to be removed)"},
-    )
-
-    # loss computation
-    skip_masked: bool = field(
-        default=False,
-        metadata={"help": "skip computing losses over masked frames"},
-    )
-    skip_nomask: bool = field(
-        default=False,
-        metadata={"help": "skip computing losses over unmasked frames"},
-    )
-
-    checkpoint_activations: bool = field(
-        default=False,
-        metadata={"help": "recompute activations and save memory for extra compute"},
-    )
-
-    # FP16 optimization
-    required_seq_len_multiple: int = field(
-        default=2,
-        metadata={
-            "help": "pad the input to encoder such that the sequence length is divisible by multiple"
-        },
-    )
-
-    # Conformer
-    depthwise_conv_kernel_size: int = field(
-        default=31,
-        metadata={
-            "help": "depthwise-conv-kernel-size for convolution in conformer layer"
-        },
-    )
-    attn_type: str = field(
-        default="",
-        metadata={"help": "if espnet use ESPNET MHA"},
-    )
-    pos_enc_type: str = field(
-        default="abs",
-        metadata={"help": "Positional encoding type to use in conformer"},
-    )
-    fp16: bool = field(default=False, metadata={"help": "If fp16 is being used"})
-
-
-@register_model("hubert", dataclass=HubertConfig)
-class HubertModel(BaseFairseqModel):
+@register_model("hubert_spec", dataclass=HubertConfig)
+class HubertSpecModel(HubertModel):
     def __init__(
         self,
-        cfg: HubertConfig,
+        cfg: HubertSpecConfig,
         task_cfg: HubertPretrainingConfig,
         dictionaries: List[Dictionary],
     ) -> None:
-        super().__init__()
-        logger.info(f"HubertModel Config: {cfg}")
+        super().__init__(cfg, task_cfg, dictionaries)
+        logger.info(f"HubertSpecModel Config: {cfg}")
 
         feature_enc_layers = eval(cfg.conv_feature_layers)  # noqa
         self.embed = feature_enc_layers[-1][0]
 
-        self.feature_extractor = ConvFeatureExtractionModel(
-            conv_layers=feature_enc_layers,
-            dropout=0.0,
-            mode=cfg.extractor_mode,
-            conv_bias=cfg.conv_bias,
-        )
+        # self.feature_extractor = ConvFeatureExtractionModel(
+        #     conv_layers=feature_enc_layers,
+        #     dropout=0.0,
+        #     mode=cfg.extractor_mode,
+        #     conv_bias=cfg.conv_bias,
+        # )
         
         feature_ds_rate = np.prod([s for _, _, s in feature_enc_layers])
         self.feat2tar_ratio = cfg.label_rate * feature_ds_rate / task_cfg.sample_rate
@@ -332,10 +146,10 @@ class HubertModel(BaseFairseqModel):
         return state_dict
 
     @classmethod
-    def build_model(cls, cfg: HubertConfig, task: HubertPretrainingTask):
+    def build_model(cls, cfg: HubertSpecConfig, task: HubertPretrainingTask):
         """Build a new model instance."""
-
-        model = HubertModel(cfg, task.cfg, task.dictionaries)
+        
+        model = HubertSpecModel(cfg, task.cfg, task.dictionaries)
         return model
 
     def apply_mask(self, x, padding_mask, target_list):
@@ -391,19 +205,33 @@ class HubertModel(BaseFairseqModel):
         return logits
 
     def forward_features(self, source: torch.Tensor) -> torch.Tensor:
-        if self.feature_grad_mult > 0:
-            features = self.feature_extractor(source)
-            if self.feature_grad_mult != 1.0:
-                features = GradMultiply.apply(features, self.feature_grad_mult)
-        else:
-            with torch.no_grad():
-                features = self.feature_extractor(source)
+        if self.feature_grad_mult > 0:	
+            features = complex_spec(source)	
+
+            # if self.cfg.extractor_mode == "complex":
+            #     print('hihihihiddjdj')	
+            # elif self.cfg.extractor_mode == "linear_power":	
+            #     features = linear_power(source)		
+            # else:	
+            # features = self.feature_extractor(source)	
+            if self.feature_grad_mult != 1.0:	
+                features = GradMultiply.apply(features, self.feature_grad_mult)	
+        else:	
+            with torch.no_grad():	
+                if self.cfg.extractor_mode == "complex":	
+                    features = complex(source)	
+                elif self.cfg.extractor_mode == "linear_power":	
+                    features = linear_power(source)	
+                # elif self.cfg.extractor_mode == "logmel_power":	
+                #     features = logmel_power(source)	
+                else:	
+                    features = self.feature_extractor(source)	
         return features
 
     def forward_targets(
         self,
         features: torch.Tensor,
-        target_list: List[torch.Tensor],
+        target_list: list[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Trim features to ensure labels exist and then get aligned labels
         feat_tsz = features.size(2)
@@ -437,18 +265,17 @@ class HubertModel(BaseFairseqModel):
         output_layer: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         """output layer is 1-based"""
-        # print('justfeatures', source.shape) # 6, 225120
-
         features = self.forward_features(source)
-        print('afterfeaturesforwarded', features) # 6, 512, 703
         if target_list is not None:
             features, target_list = self.forward_targets(features, target_list)
 
         features_pen = features.float().pow(2).mean()
+        # print('check', features.device)
+        # features = features.to(device='cuda')
         features = features.transpose(1, 2)
+
         features = self.layer_norm(features)
         unmasked_features = features.clone()
-        # print('someprocessing', features.shape) # 6 703 512
 
         if padding_mask is not None:
             padding_mask = self.forward_padding_mask(features, padding_mask)
@@ -458,13 +285,13 @@ class HubertModel(BaseFairseqModel):
 
         features = self.dropout_input(features)
         unmasked_features = self.dropout_features(unmasked_features)
-        # print('idkjustlooking', features.shape) # 6 703 768
+
         if mask:
             x, mask_indices = self.apply_mask(features, padding_mask, target_list)
         else:
             x = features
             mask_indices = None
-        # print('whatarefeaturesnow', x.shape)
+
         # feature: (B, T, D), float
         # target: (B, T), long
         # x: (B, T, D), float
@@ -475,7 +302,6 @@ class HubertModel(BaseFairseqModel):
             padding_mask=padding_mask,
             layer=None if output_layer is None else output_layer - 1,
         )
-        # print('and howbout after masking', x.shape) # 8 477 768
 
         if features_only:
             return {"x": x, "padding_mask": padding_mask, "features": features}
@@ -501,8 +327,6 @@ class HubertModel(BaseFairseqModel):
                 proj_x_m_list = proj_x_m.chunk(len(target_list), dim=-1)
             else:
                 proj_x_m_list = [proj_x_m for _ in range(len(target_list))]
-            # print('huberttarget', target_list[0].shape) # 6 703
-            # print('hubertprojx', proj_x_m_list[0].shape) # 2160, 256
             logit_m_list = [
                 compute_pred(proj_x_m, t[masked_indices], label_embs_list[i])
                 for i, (proj_x_m, t) in enumerate(zip(proj_x_m_list, target_list))

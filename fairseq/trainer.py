@@ -566,7 +566,7 @@ class Trainer(object):
                     logger.info(self.model)
 
                 self.model.load_state_dict(
-                    state["model"], strict=True, model_cfg=self.cfg.model
+                    state["model"], strict=False, model_cfg=self.cfg.model
                 )
                 # save memory for later steps
                 del state["model"]
@@ -899,12 +899,19 @@ class Trainer(object):
             )
 
         overflow = False
+        # print("new")
+        reduced = ""
+        multiplied = ""
+        clipped = ""
+        optimized = ""
+
         try:
             with torch.autograd.profiler.record_function("reduce-grads"):
                 # reduce gradients across workers
                 self.optimizer.all_reduce_grads(self.model)
                 if utils.has_parameters(self.criterion):
                     self.optimizer.all_reduce_grads(self.criterion)
+                reduced = "True"
 
             with torch.autograd.profiler.record_function("multiply-grads"):
                 # multiply gradients by (data_parallel_size / sample_size) since
@@ -924,11 +931,12 @@ class Trainer(object):
                 # Note: (sample_size or 1.0) handles the case of a zero gradient, in a
                 # way that avoids CPU/device transfers in case sample_size is a GPU or
                 # TPU object. The assumption is that the gradient itself is also 0.
-
+                multiplied = "True"
             with torch.autograd.profiler.record_function("clip-grads"):
                 # clip grads
                 grad_norm = self.clip_grad_norm(self.cfg.optimization.clip_norm)
-
+                # print('does the gradient ever get clipped', grad_norm)
+                clipped = "True"
             # check that grad norms are consistent across workers
             # on tpu check tensor is slow
             if not self.tpu:
@@ -960,7 +968,7 @@ class Trainer(object):
                         return self.train_step(
                             samples, raise_oom
                         )  # recursion to feed in same batch
-
+                optimized = "True"
         except FloatingPointError:
 
             self.consolidate_optimizer()
@@ -986,6 +994,14 @@ class Trainer(object):
             raise
         except OverflowError as e:
             overflow = True
+            # if len(reduced) == 0:
+            #     print("did not reduce properly")
+            # if len(multiplied) == 0:
+            #     print('did not multily property')
+            # if len(clipped) == 0:
+            #     print("did not clip properlty")
+            # if len(optimized) == 0:
+            #     print("did not optimize properly")
             logger.info(
                 f"NOTE: gradient overflow detected, ignoring gradient, {str(e)}"
             )
